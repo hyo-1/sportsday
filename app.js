@@ -151,8 +151,14 @@ function errText(e) {
 }
 
 // 저장을 요청하고, 결과를 작은 알림으로 알려줍니다.
+let pendingWrites = 0; // 아직 서버에 도착하지 않은 저장 개수 (인터넷이 불안정하면 늘어나요)
 function write(p) {
-  Promise.resolve(p).then(() => flash('저장됨')).catch((e) => { console.error(e); flash(errText(e), true); });
+  pendingWrites++;
+  renderTop();
+  const done = () => { pendingWrites = Math.max(0, pendingWrites - 1); renderTop(); };
+  Promise.resolve(p)
+    .then(() => { done(); flash('저장됨'); })
+    .catch((e) => { done(); console.error(e); flash(errText(e), true); });
 }
 const setVal = (path, value) => write(store.set(path, value));
 const delVal = (path) => write(store.remove(path));
@@ -168,13 +174,14 @@ function putNumber(path, raw, max) {
 // ───────────────────────── 화면 만들기 ─────────────────────────
 
 function renderTop() {
-  const text = {
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false && status !== 'demo';
+  const text = offline ? '인터넷 연결이 끊겼어요 · 연결되면 자동으로 전송돼요' : pendingWrites > 0 && status !== 'demo' ? `전송 중… (${pendingWrites}건 대기)` : {
     ok: '실시간 연결됨',
     demo: '연습 모드 · 이 기기에만 저장돼요',
     error: '연결 오류 · 새로고침 해 보세요',
     connecting: '연결 중…',
   }[status];
-  const dot = { ok: '', demo: 'demo', error: 'error', connecting: 'connecting' }[status];
+  const dot = offline || (pendingWrites > 0 && status !== 'demo') ? 'connecting' : { ok: '', demo: 'demo', error: 'error', connecting: 'connecting' }[status];
   const upd = state.meta && state.meta.updated ? ` · 마지막 입력 ${fmtTime(state.meta.updated)}` : '';
   $('#top').innerHTML = `
     <div class="top-inner">
@@ -731,10 +738,22 @@ function render() {
 }
 
 let renderTimer = null;
+let renderDeferred = false;
 function queueRender() {
   clearTimeout(renderTimer);
-  renderTimer = setTimeout(render, 30);
+  renderTimer = setTimeout(() => {
+    // 선택창(드롭다운)을 고르는 중에 다른 교사의 저장이 도착하면, 화면을 다시 그리면서 선택창이 닫혀 버려요.
+    // 그래서 선택이 끝날 때까지 잠깐 기다렸다가 그립니다.
+    const a = document.activeElement;
+    if (a && a.tagName === 'SELECT' && $('#main').contains(a)) { renderDeferred = true; return; }
+    render();
+  }, 30);
 }
+document.addEventListener('focusout', (e) => {
+  if (renderDeferred && e.target && e.target.tagName === 'SELECT') { renderDeferred = false; setTimeout(queueRender, 60); }
+});
+window.addEventListener('online', () => renderTop());
+window.addEventListener('offline', () => renderTop());
 
 // ───────────────────────── 줄다리기 저장 도우미 ─────────────────────────
 
