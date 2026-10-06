@@ -704,10 +704,14 @@ function focusSnapshot() {
   return sel ? { sel: a.tagName.toLowerCase() + sel, value: a.value } : null;
 }
 
+let chipsTab = null;
 function render() {
   const snap = focusSnapshot();
   const bs = document.querySelector('.bracket-scroll');
   const bracketLeft = bs ? bs.scrollLeft : 0;
+  const cs = document.querySelector('.chips');
+  const chipsLeft = cs && chipsTab === ui.tab ? cs.scrollLeft : 0;
+  chipsTab = ui.tab;
   renderTop();
   renderNav();
   const main = $('#main');
@@ -715,6 +719,8 @@ function render() {
   main.innerHTML = VIEWS[ui.tab]();
   const bs2 = main.querySelector('.bracket-scroll');
   if (bs2) bs2.scrollLeft = bracketLeft;
+  const cs2 = main.querySelector('.chips');
+  if (cs2) cs2.scrollLeft = chipsLeft;
   if (snap) {
     const el = main.querySelector(snap.sel);
     if (el) {
