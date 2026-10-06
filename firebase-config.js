@@ -7,12 +7,12 @@
 // 연습 모드에서는 데이터가 그 기기의 브라우저에만 저장되고, 교사 번호는 123456 입니다.
 
 export const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID',
+  apiKey: 'AIzaSyASAQzqbFW46_qRtEeqmPnrZAPJKjgQZac',
+  authDomain: 'maseok-sportsday.firebaseapp.com',
+  projectId: 'maseok-sportsday',
+  storageBucket: 'maseok-sportsday.firebasestorage.app',
+  messagingSenderId: '235993027427',
+  appId: '1:235993027427:web:f8a89bdb0fcdcf91b03956',
 };
 
 // 교사 로그인에 쓰는 이메일 (Firebase 콘솔의 Authentication에서 "같은 이메일"로 사용자를 만듭니다.)
