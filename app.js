@@ -382,34 +382,130 @@ function leagueBody(ev, g, res, edit) {
     <div class="tbl-wrap"><table><thead><tr><th>반</th><th>결과</th><th>점수</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// 줄다리기: 예선 → 4강 → 결승을 하나의 토너먼트 대진표로 보여줍니다.
+// 대진(조편성)은 관리 교사가 추첨 뒤 "대진 설정"에서 입력하고, 이긴 반을 누르면 다음 경기로 올라갑니다.
 function tugBody(ev, g, res, edit) {
-  const slotSel = (i) => {
-    const cur = res.semis[i];
-    return `<select data-act="semi" data-slot="${i}" aria-label="4강 ${i + 1}번째 반">
-      <option value="">반 선택</option>
-      ${classes(g)
-        .map((c) => `<option value="${c}" ${c === cur ? 'selected' : ''} ${res.semis.some((x, j) => j !== i && x === c) ? 'disabled' : ''}>${label(g, c)}</option>`)
-        .join('')}</select>`;
+  const pre = resolveTugPre(state, g);
+  const setup = edit && ui.preSetup;
+  const showPre = pre.hasData || setup;
+  const linked = res.linked;
+  const isRef = (raw) => typeof raw === 'string' && /^W\d+$/.test(raw);
+  const T = (cls, raw, fallback = '미정') => ({
+    cls,
+    text: cls !== null ? label(g, cls) : isRef(raw) ? `${raw.slice(1)}경기 승자` : fallback,
+  });
+
+  // 1) 대진표에 들어갈 경기들
+  const nodes = [];
+  if (showPre) {
+    for (const m of pre.matches) {
+      nodes.push({
+        id: 'm' + m.id, title: `${m.id}경기`, col: m.round - 1, a: T(m.a, m.aRaw), b: T(m.b, m.bRaw), w: m.w,
+        attrs: `data-action="pwin" data-m="${m.id}"`,
+        kids: [m.aRaw, m.bRaw].filter(isRef).map((r) => 'm' + r.slice(1)),
+      });
+    }
+  }
+  const semiRaw = (i) => (linked ? pre.semiRaw[i] : res.semis[i]);
+  const semiKids = (i, j) => (showPre && linked ? [semiRaw(i), semiRaw(j)].filter(isRef).map((r) => 'm' + r.slice(1)) : []);
+  const semiCol = showPre ? 2 : 0;
+  nodes.push({ id: 's1', title: '4강 1경기', col: semiCol, a: T(res.semis[0], semiRaw(0)), b: T(res.semis[1], semiRaw(1)), w: res.w1, attrs: 'data-action="win" data-slot="w1"', kids: semiKids(0, 1) });
+  nodes.push({ id: 's2', title: '4강 2경기', col: semiCol, a: T(res.semis[2], semiRaw(2)), b: T(res.semis[3], semiRaw(3)), w: res.w2, attrs: 'data-action="win" data-slot="w2"', kids: semiKids(2, 3) });
+  nodes.push({ id: 'f', title: '결승', col: semiCol + 1, final: true, a: T(res.w1, null, '4강 1경기 승자'), b: T(res.w2, null, '4강 2경기 승자'), w: res.wf, attrs: 'data-action="win" data-slot="wf"', kids: ['s1', 's2'] });
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+
+  // 2) 세로 위치: 앞 경기가 없는 경기는 한 줄씩, 다음 경기는 앞 경기들의 가운데
+  const ypos = {};
+  let leaf = 0;
+  const place = (id, seen) => {
+    const n = byId[id];
+    if (!n || seen.includes(id)) return 0;
+    if (ypos[id] !== undefined) return ypos[id];
+    const kids = n.kids.filter((k) => byId[k]);
+    let y;
+    if (!kids.length) y = leaf++;
+    else { const ys = kids.map((k) => place(k, [...seen, id])); y = ys.reduce((p, q) => p + q, 0) / ys.length; }
+    ypos[id] = y;
+    return y;
   };
-  const team = (slotKey, c, winner, active) =>
-    c === null || c === undefined
-      ? '<div class="team empty-t">-</div>'
-      : edit && active
-        ? `<button class="team ${winner === c ? 'win' : ''}" data-action="win" data-slot="${slotKey}" data-c="${c}">${label(g, c)}</button>`
-        : `<div class="team ${winner === c ? 'win' : ''}">${label(g, c)}</div>`;
-  const [s0, s1, s2, s3] = res.semis;
-  const match = (title, a, b, ia, ib, winKey, winner) => `
-    <div class="match">
-      <h3>${title}</h3>
-      ${edit && !res.linked ? `<div class="vs">${slotSel(ia)}<span class="x">VS</span>${slotSel(ib)}</div><div class="win-note">이긴 반을 눌러 주세요</div>` : ''}
-      <div class="vs" style="margin-top:8px">${team(winKey, a, winner, a !== null && b !== null)}<span class="x">VS</span>${team(winKey, b, winner, a !== null && b !== null)}</div>
-    </div>`;
-  const finalMatch = `
-    <div class="match final">
-      <h3>결승</h3>
-      <div class="vs">${team('wf', res.w1, res.wf, res.w1 !== null && res.w2 !== null)}<span class="x">VS</span>${team('wf', res.w2, res.wf, res.w1 !== null && res.w2 !== null)}</div>
-      <div class="win-note">${res.wf !== null ? label(g, res.wf) + ' 우승!' : '4강 승자끼리 결승에서 만나요'}</div>
-    </div>`;
+  place('f', []);
+  nodes.forEach((n) => place(n.id, []));
+
+  const COL_W = 140, GAP = 30, ROW_H = 128, BOX_H = 108, TOP = 34;
+  const cols = semiCol + 2;
+  const width = cols * COL_W + (cols - 1) * GAP;
+  const height = TOP + Math.max(leaf, 1) * ROW_H;
+  const px = (n) => n.col * (COL_W + GAP);
+  const py = (n) => TOP + ypos[n.id] * ROW_H + (ROW_H - BOX_H) / 2;
+
+  // 3) 선 (이긴 반이 정해진 경기에서 나온 선은 파란색)
+  let lines = '';
+  for (const n of nodes) {
+    for (const k of n.kids) {
+      const c = byId[k];
+      if (!c) continue;
+      const x1 = px(c) + COL_W, y1 = py(c) + BOX_H / 2, x2 = px(n), y2 = py(n) + BOX_H / 2, xm = x1 + GAP / 2;
+      lines += `<path class="${c.w !== null ? 'on' : ''}" d="M${x1} ${y1} H${xm} V${y2} H${x2}"/>`;
+    }
+  }
+
+  // 4) 경기 상자
+  const team = (n, side) => {
+    const t = n[side];
+    if (t.cls === null) return `<div class="bt empty-t">${t.text}</div>`;
+    const active = edit && n.a.cls !== null && n.b.cls !== null;
+    const win = n.w === t.cls ? 'win' : '';
+    return active
+      ? `<button class="bt ${win}" ${n.attrs} data-c="${t.cls}">${t.text}</button>`
+      : `<div class="bt ${win}">${t.text}</div>`;
+  };
+  const boxes = nodes
+    .map((n) => `<div class="bm ${n.final ? 'final' : ''}" style="left:${px(n)}px;top:${py(n)}px;width:${COL_W}px;height:${BOX_H}px">
+      <div class="bm-title">${n.title}</div>${team(n, 'a')}${team(n, 'b')}</div>`)
+    .join('');
+  const heads = (showPre ? ['예선 1라운드', '예선 2라운드', '4강', '결승'] : ['4강', '결승'])
+    .map((t, i) => `<div class="bhead" style="left:${i * (COL_W + GAP)}px;width:${COL_W}px">${t}</div>`)
+    .join('');
+
+  // 5) 관리 교사 설정 (버튼을 눌러야 열려요)
+  const preUsed = new Set();
+  pre.matches.forEach((m) => [m.aRaw, m.bRaw].forEach((v) => { if (typeof v === 'number') preUsed.add(v); }));
+  pre.semiRaw.forEach((v) => { if (typeof v === 'number') preUsed.add(v); });
+  const options = (raw, beforeId) =>
+    `<option value="" ${raw === '' || raw === undefined ? 'selected' : ''}>미정</option>` +
+    classes(g).map((c) => `<option value="${c}" ${raw === c ? 'selected' : ''} ${preUsed.has(c) && raw !== c ? 'disabled' : ''}>${label(g, c)}</option>`).join('') +
+    pre.tpl.ids.filter((id) => beforeId === undefined || id < beforeId).map((id) => `<option value="W${id}" ${raw === 'W' + id ? 'selected' : ''}>${id}경기 승자</option>`).join('');
+  const sel = (k, side, raw, beforeId, name) =>
+    `<select data-act="pslot" data-key="${k}"${side ? ` data-side="${side}"` : ''} aria-label="${name}">${options(raw, beforeId)}</select>`;
+  const manualSel = (i) =>
+    `<select data-act="semi" data-slot="${i}" aria-label="4강 ${i + 1}번째 반"><option value="">반 선택</option>${classes(g)
+      .map((c) => `<option value="${c}" ${c === res.semis[i] ? 'selected' : ''} ${res.semis.some((x, j) => j !== i && x === c) ? 'disabled' : ''}>${label(g, c)}</option>`)
+      .join('')}</select>`;
+  const row = (title, left, right) => `<div class="set-row"><b>${title}</b>${left}<span class="x">VS</span>${right}</div>`;
+  const setupHtml = setup
+    ? `<div class="grp">
+        <div class="grp-head"><b>관리 교사 설정</b></div>
+        <div class="muted" style="margin-bottom:10px">추첨 결과에 맞게 칸을 고르세요. “N경기 승자”를 고르면 그 경기에서 이긴 반이 자동으로 올라와요. 반은 한 번만 쓸 수 있어요.</div>
+        <div class="sub-title" style="margin-top:0">예선 대진</div>
+        ${pre.matches.map((m) => row(`${m.id}경기`, sel('m' + m.id, 'a', m.aRaw, m.id, `${m.id}경기 첫째 칸`), sel('m' + m.id, 'b', m.bRaw, m.id, `${m.id}경기 둘째 칸`))).join('')}
+        <div class="sub-title">4강 진출 반 ${linked ? '' : '(직접 고르기)'}</div>
+        ${linked
+          ? row('4강 1', sel('s0', '', pre.semiRaw[0], undefined, '4강 1경기 첫째 칸'), sel('s1', '', pre.semiRaw[1], undefined, '4강 1경기 둘째 칸')) +
+            row('4강 2', sel('s2', '', pre.semiRaw[2], undefined, '4강 2경기 첫째 칸'), sel('s3', '', pre.semiRaw[3], undefined, '4강 2경기 둘째 칸'))
+          : row('4강 1', manualSel(0), manualSel(1)) + row('4강 2', manualSel(2), manualSel(3))}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn sm" data-action="prelink">${linked ? '4강 자동 연결: 켜짐 (끄기)' : '4강 자동 연결: 꺼짐 (켜기)'}</button>
+          <button class="btn ghost sm" data-action="preclear">이 학년 예선 지우기</button>
+        </div>
+      </div>`
+    : '';
+  const setupBtn = edit
+    ? `<button class="btn amber sm" data-action="presetup" style="margin-bottom:10px">${ui.preSetup ? '대진 설정 닫기' : '대진 설정 (관리 교사)'}</button>`
+    : '';
+  const hint = !showPre
+    ? '<div class="hint" style="margin:0 0 8px">예선 대진이 아직 없어요. ' + (edit ? '“대진 설정”에서 입력하거나 4강 반을 직접 고를 수 있어요.' : '추첨이 끝나면 관리 교사가 입력해요.') + '</div>'
+    : '';
+
   const rows = classes(g)
     .map((c) => {
       const r = res.byClass[c];
@@ -417,120 +513,32 @@ function tugBody(ev, g, res, edit) {
     })
     .join('');
   return `
-    <p class="hint" style="margin:0 0 10px">${TUG_PRELIM}</p>
-    ${res.linked ? '<div class="warn" style="background:var(--sky-50);color:var(--blue)">4강 진출 반은 “줄다리기 예선” 결과에서 자동으로 채워져요.</div>' : ''}
-    <div class="sub-title">4강 · 결승</div>
-    ${match('4강 1경기', s0, s1, 0, 1, 'w1', res.w1)}
-    ${match('4강 2경기', s2, s3, 2, 3, 'w2', res.w2)}
-    ${finalMatch}
+    <p class="hint" style="margin:0 0 10px">${g}학년 예선전 ${TUG_PRE_DATE[g]} · 4강과 결승은 당일 본선</p>
+    ${setupBtn}${setupHtml}${hint}
+    <div class="bracket-scroll"><div class="bracket" style="width:${width}px;height:${height}px">
+      <svg class="lines" width="${width}" height="${height}" aria-hidden="true">${lines}</svg>${heads}${boxes}
+    </div></div>
+    ${res.wf !== null ? `<div class="champ">우승 ${label(g, res.wf)}</div>` : ''}
     <div class="sub-title">반별 점수</div>
     <div class="tbl-wrap"><table><thead><tr><th>반</th><th>결과</th><th>점수</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="hint">4강에서 진 두 반은 공동 3위, 4강에 오르지 못한 반은 5위 이하 점수예요.</p>`;
+    <p class="hint">${edit ? '이긴 반 이름을 누르면 다음 경기로 올라가요. 다시 누르면 취소돼요. ' : ''}4강에서 진 두 반은 공동 3위, 4강에 오르지 못한 반은 5위 이하 점수예요.</p>`;
 }
 
 function viewEvent() {
+  const ev = EVENTS.find((e) => e.id === ui.evId) || EVENTS[0];
   const g = ui.evG;
-  const edit = canEdit();
-  const chipList = EVENTS.flatMap((e) =>
-    e.id === 'tug'
-      ? [{ id: 'tugpre', name: '줄다리기 예선' }, { id: 'tug', name: '줄다리기 본선' }]
-      : [{ id: e.id, name: e.name }],
-  );
-  const head = `<div class="chips">${chipList.map((e) => `<button class="${e.id === ui.evId ? 'on' : ''}" data-action="ev" data-id="${e.id}">${e.name}</button>`).join('')}</div>${gradeSeg('evg', g)}`;
-
-  if (ui.evId === 'tugpre') {
-    const pre = resolveTugPre(state, g);
-    const done = pre.semis.every((c) => c !== null);
-    return `
-      <section class="card">
-        ${head}
-        <div class="sec-head"><h2>줄다리기 예선 · ${g}학년</h2><span class="badge ${done ? 'done' : pre.hasData ? 'live' : ''}">${done ? '4강 확정' : pre.hasData ? '진행중' : '대진 대기'}</span></div>
-        ${tugPreBody(g, pre)}
-      </section>`;
-  }
-
-  const ev = EVENTS.find((e) => e.id === ui.evId);
   const res = computeEvent(state, ev, g);
+  const edit = canEdit();
   const body = { rank: marchBody, count: marathonBody, league: leagueBody, tug: tugBody }[ev.type](ev, g, res, edit);
   const st = eventStatus(res);
   return `
     <section class="card">
-      ${head}
-      <div class="sec-head"><h2>${ev.type === 'tug' ? '줄다리기 본선' : ev.name} · ${g}학년</h2><span class="badge ${st}">${{ done: '입력 완료', live: '진행중', wait: '대기' }[st]}</span></div>
+      <div class="chips">${EVENTS.map((e) => `<button class="${e.id === ev.id ? 'on' : ''}" data-action="ev" data-id="${e.id}">${e.name}</button>`).join('')}</div>
+      ${gradeSeg('evg', g)}
+      <div class="sec-head"><h2>${ev.name} · ${g}학년</h2><span class="badge ${st}">${{ done: '입력 완료', live: '진행중', wait: '대기' }[st]}</span></div>
       ${pointStrip(ev)}
       ${body}
     </section>`;
-}
-
-// 줄다리기 예선전: 대진(조편성)은 관리 교사가 추첨 뒤에 입력하고, 4강 진출 반이 본선으로 자동 연결됩니다.
-function tugPreBody(g, pre) {
-  const edit = canEdit();
-  const setup = edit && ui.preSetup;
-  const ids = pre.tpl.ids;
-  const used = new Set();
-  pre.matches.forEach((m) => { [m.aRaw, m.bRaw].forEach((v) => { if (typeof v === 'number') used.add(v); }); });
-  pre.semiRaw.forEach((v) => { if (typeof v === 'number') used.add(v); });
-  const isRef = (raw) => typeof raw === 'string' && /^W\d+$/.test(raw);
-  const slotLabel = (raw, cls) => (cls !== null ? label(g, cls) : isRef(raw) ? `${raw.slice(1)}경기 승자` : '미정');
-  const options = (raw, beforeId) =>
-    `<option value="" ${raw === '' || raw === undefined ? 'selected' : ''}>미정</option>` +
-    classes(g).map((c) => `<option value="${c}" ${raw === c ? 'selected' : ''} ${used.has(c) && raw !== c ? 'disabled' : ''}>${label(g, c)}</option>`).join('') +
-    ids.filter((id) => beforeId === undefined || id < beforeId).map((id) => `<option value="W${id}" ${raw === 'W' + id ? 'selected' : ''}>${id}경기 승자</option>`).join('');
-  const sel = (k, side, raw, beforeId, name) =>
-    `<select data-act="pslot" data-key="${k}"${side ? ` data-side="${side}"` : ''} aria-label="${name}">${options(raw, beforeId)}</select>`;
-
-  const matchCard = (m) => {
-    const active = m.a !== null && m.b !== null;
-    const box = (cls, raw) =>
-      cls === null
-        ? `<div class="team empty-t">${slotLabel(raw, null)}</div>`
-        : edit && active
-          ? `<button class="team ${m.w === cls ? 'win' : ''}" data-action="pwin" data-m="${m.id}" data-c="${cls}">${label(g, cls)}</button>`
-          : `<div class="team ${m.w === cls ? 'win' : ''}">${label(g, cls)}</div>`;
-    return `
-      <div class="match">
-        <h3>예선 ${m.id}경기${m.w !== null ? ' · ' + label(g, m.w) + ' 승' : ''}</h3>
-        ${setup ? `<div class="vs">${sel('m' + m.id, 'a', m.aRaw, m.id, m.id + '경기 첫째 칸')}<span class="x">VS</span>${sel('m' + m.id, 'b', m.bRaw, m.id, m.id + '경기 둘째 칸')}</div>` : ''}
-        <div class="vs" ${setup ? 'style="margin-top:8px"' : ''}>${box(m.a, m.aRaw)}<span class="x">VS</span>${box(m.b, m.bRaw)}</div>
-        ${edit && active && !setup ? '<div class="win-note">이긴 반을 눌러 주세요</div>' : ''}
-      </div>`;
-  };
-
-  const rounds = [...new Set(ids.map((id) => pre.tpl.round[id]))];
-  const roundsHtml = rounds
-    .map((r) => `<div class="sub-title">${r}라운드</div>${pre.matches.filter((m) => m.round === r).map(matchCard).join('')}`)
-    .join('');
-
-  const semiBox = (i) => `<div class="team ${pre.semis[i] === null ? 'empty-t' : ''}">${slotLabel(pre.semiRaw[i], pre.semis[i])}</div>`;
-  const semiPair = (title, i, j) => `
-    <div class="match final">
-      <h3>${title}</h3>
-      ${setup ? `<div class="vs">${sel('s' + i, '', pre.semiRaw[i], undefined, title + ' 첫째 칸')}<span class="x">VS</span>${sel('s' + j, '', pre.semiRaw[j], undefined, title + ' 둘째 칸')}</div>` : ''}
-      <div class="vs" ${setup ? 'style="margin-top:8px"' : ''}>${semiBox(i)}<span class="x">VS</span>${semiBox(j)}</div>
-    </div>`;
-
-  const linkLine = pre.hasData
-    ? pre.linked ? '예선 결과가 줄다리기 본선 4강에 자동으로 연결돼요.' : '본선 자동 연결이 꺼져 있어요. (본선 탭에서 4강을 직접 골라요)'
-    : '';
-  const setupBtn = edit
-    ? `<button class="btn amber sm" data-action="presetup" style="margin-bottom:10px">${ui.preSetup ? '대진 설정 닫기' : '대진 설정 (관리 교사)'}</button>`
-    : '';
-  const setupTools = setup
-    ? `<div class="grp"><div class="grp-head"><b>관리 교사 설정</b></div>
-        <div class="muted" style="margin-bottom:8px">추첨 결과에 맞게 각 경기의 칸을 고르세요. “N경기 승자”를 고르면 그 경기에서 이긴 반이 자동으로 올라와요. 반은 한 번만 쓸 수 있어요.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn sm" data-action="prelink">${pre.linked ? '본선 자동 연결: 켜짐 (끄기)' : '본선 자동 연결: 꺼짐 (켜기)'}</button>
-          <button class="btn ghost sm" data-action="preclear">이 학년 예선 지우기</button>
-        </div></div>`
-    : '';
-
-  return `
-    <p class="hint" style="margin:0 0 10px">${g}학년 줄다리기 예선전: ${TUG_PRE_DATE[g]} ${linkLine ? '· ' + linkLine : ''}</p>
-    ${setupBtn}${setupTools}
-    ${pre.hasData || setup ? roundsHtml : '<div class="empty">예선 대진이 아직 없어요. 추첨이 끝나면 관리 교사가 입력해요.</div>'}
-    <div class="sub-title">본선 4강 진출</div>
-    ${semiPair('본선 4강 1경기', 0, 1)}
-    ${semiPair('본선 4강 2경기', 2, 3)}`;
 }
 
 // ── 3. 스포츠문화상 ──
@@ -653,7 +661,7 @@ const VIEWS = { rank: viewRank, event: viewEvent, culture: viewCulture, plan: vi
 function focusSnapshot() {
   const a = document.activeElement;
   const main = $('#main');
-  if (!a || !main.contains(a) || !(a.tagName === 'INPUT' || a.tagName === 'SELECT')) return null;
+  if (!a || !main.contains(a) || a.tagName !== 'INPUT') return null; // 선택창(select)에 포커스를 되돌리면 폰에서 목록이 다시 열려요
   const sel = Array.from(a.attributes)
     .filter((x) => x.name.startsWith('data-'))
     .map((x) => `[${x.name}="${x.value}"]`)
@@ -663,11 +671,15 @@ function focusSnapshot() {
 
 function render() {
   const snap = focusSnapshot();
+  const bs = document.querySelector('.bracket-scroll');
+  const bracketLeft = bs ? bs.scrollLeft : 0;
   renderTop();
   renderNav();
   const main = $('#main');
   main.className = 'wrap' + (canEdit() ? ' edit-on' : '');
   main.innerHTML = VIEWS[ui.tab]();
+  const bs2 = main.querySelector('.bracket-scroll');
+  if (bs2) bs2.scrollLeft = bracketLeft;
   if (snap) {
     const el = main.querySelector(snap.sel);
     if (el) {
@@ -779,6 +791,7 @@ document.addEventListener('change', (e) => {
   const t = e.target;
   const act = t.dataset && t.dataset.act;
   if (!act) return;
+  if (t.tagName === 'SELECT') t.blur(); // 고른 뒤 선택창을 닫아 둡니다
 
   // 관람용 선택 (로그인 필요 없음)
   if (act === 'myG') {
