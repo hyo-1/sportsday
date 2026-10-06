@@ -140,9 +140,66 @@ function computeLeagueEvent(state, ev, g) {
   return { byClass, complete, started, groups, finalists };
 }
 
+// ───────── 줄다리기 예선전 ─────────
+// 계획서 도면: 12학급은 11경기, 10학급은 9경기 토너먼트입니다.
+// 이 중 "예선"은 4강 진출 반 4개를 가리는 경기이고, 4강·결승은 당일 본선에서 치릅니다.
+// 조편성(누가 어디에 들어가는지)은 추첨 후 관리 교사가 앱에서 직접 입력합니다.
+// 칸(slot)에는 반 번호(숫자) 또는 "N경기 승자"("W3" 형태)를 넣을 수 있고, 비어 있으면 '' 입니다.
+export const TUG_PRE = {
+  1: { ids: [1, 2, 3, 4, 5, 6, 7, 8], round: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 2, 6: 2, 7: 2, 8: 2 },
+       defaults: { 5: { a: 'W1' }, 6: { a: 'W2' }, 7: { a: 'W3' }, 8: { a: 'W4' } },
+       semiDefaults: ['W5', 'W6', 'W7', 'W8'] },
+  2: { ids: [1, 2, 3, 4, 5, 6], round: { 1: 1, 2: 1, 3: 2, 4: 2, 5: 2, 6: 2 },
+       defaults: { 3: { a: 'W1' }, 4: { a: 'W2' } },
+       semiDefaults: ['W3', 'W5', 'W6', 'W4'] },
+  3: { ids: [1, 2, 3, 4, 5, 6, 7, 8], round: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 2, 6: 2, 7: 2, 8: 2 },
+       defaults: { 5: { a: 'W1' }, 6: { a: 'W2' }, 7: { a: 'W3' }, 8: { a: 'W4' } },
+       semiDefaults: ['W5', 'W6', 'W7', 'W8'] },
+};
+export const TUG_PRE_DATE = { 1: '10/21(수)', 2: '10/20(화)', 3: '10/12(월)' };
+
+export function resolveTugPre(state, g) {
+  const tpl = TUG_PRE[g];
+  const pre = (state.tugPre || {})[g] || {};
+  const slotRaw = (id, side) => {
+    const m = pre['m' + id];
+    const v = m ? m[side] : undefined;
+    if (v !== undefined) return v;
+    const d = tpl.defaults[id];
+    return d && d[side] !== undefined ? d[side] : '';
+  };
+  const cache = {};
+  const resolve = (v, seen) => {
+    if (typeof v === 'number') return v >= 1 && v <= CLASS_COUNT[g] ? v : null;
+    if (typeof v === 'string' && /^W\d+$/.test(v)) return winnerOf(Number(v.slice(1)), seen);
+    return null;
+  };
+  const winnerOf = (id, seen) => {
+    if (!tpl.ids.includes(id) || seen.includes(id)) return null;
+    if (id in cache) return cache[id];
+    const m = pre['m' + id] || {};
+    const a = resolve(slotRaw(id, 'a'), [...seen, id]);
+    const b = resolve(slotRaw(id, 'b'), [...seen, id]);
+    const w = num(m.w);
+    const r = w !== null && a !== null && b !== null && (w === a || w === b) ? w : null;
+    cache[id] = r;
+    return r;
+  };
+  const matches = tpl.ids.map((id) => {
+    const aRaw = slotRaw(id, 'a');
+    const bRaw = slotRaw(id, 'b');
+    return { id, round: tpl.round[id], aRaw, bRaw, a: resolve(aRaw, [id]), b: resolve(bRaw, [id]), w: winnerOf(id, []) };
+  });
+  const semiRaw = [0, 1, 2, 3].map((i) => (pre['s' + i] !== undefined ? pre['s' + i] : tpl.semiDefaults[i]));
+  const semis = semiRaw.map((v) => resolve(v, []));
+  const hasData = Object.keys(pre).some((k) => k !== 'link');
+  return { tpl, matches, semiRaw, semis, hasData, linked: hasData && pre.link !== false };
+}
+
 function computeTugEvent(state, ev, g) {
   const t = (state.tug || {})[g] || {};
-  const semis = [0, 1, 2, 3].map((i) => num(t['s' + i]));
+  const pre = resolveTugPre(state, g);
+  const semis = pre.linked ? pre.semis : [0, 1, 2, 3].map((i) => num(t['s' + i]));
   const pick = (w, a, b) => (w !== null && a !== null && b !== null && (w === a || w === b) ? w : null);
   const w1 = pick(num(t.w1), semis[0], semis[1]);
   const w2 = pick(num(t.w2), semis[2], semis[3]);
@@ -175,7 +232,7 @@ function computeTugEvent(state, ev, g) {
     byClass,
     complete: wf !== null,
     started: semis.some((c) => c !== null),
-    semis, w1, w2, wf,
+    semis, w1, w2, wf, linked: pre.linked,
   };
 }
 
