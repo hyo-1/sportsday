@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1565c0">
+  <title>마석중 스포츠클럽축제 현황판</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top" id="top"></header>
+  <div id="editbar" class="editbar" hidden></div>
+
+  <main id="main" class="wrap" aria-live="polite"></main>
+
+  <nav class="nav" id="nav" aria-label="메뉴"></nav>
+
+  <!-- 교사 로그인 창 -->
+  <div class="modal" id="loginModal" hidden>
+    <form class="modal-box" id="loginForm" autocomplete="off">
+      <h2>점수 입력 모드</h2>
+      <p class="muted">교사용 번호(숫자 6자리)를 입력하세요.</p>
+      <input id="pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12"
+             placeholder="••••••" aria-label="교사용 번호">
+      <p class="err" id="loginErr" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" data-action="login-cancel">취소</button>
+        <button type="submit" class="btn primary" id="loginBtn">입력 시작</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
