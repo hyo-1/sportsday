@@ -98,7 +98,7 @@ h1, h2, h3, p { margin: 0; }
 .seg button.on { background: var(--blue); color: #fff; box-shadow: 0 2px 6px rgba(21, 101, 192, 0.3); }
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
-.chips button { flex: 0 0 auto; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 2px solid var(--line); background: #fff; font-weight: 700; color: var(--blue); white-space: nowrap; }
+.chips button { flex: 0 0 auto; min-height: 36px; padding: 0 12px; font-size: 14px; border-radius: 999px; border: 2px solid var(--line); background: #fff; font-weight: 700; color: var(--blue); white-space: nowrap; }
 .chips button.on { background: var(--blue); border-color: var(--blue); color: #fff; }
 
 /* ── 종목 진행 상태 ── */
