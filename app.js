@@ -7,6 +7,7 @@ import {
   SCHEDULE, EVENT_INFO, TUG_PRELIM, PLEDGE, GROUPS,
   classes, label, key,
   computeAll, computeEvent, computeCulture, eventStatus,
+  resolveTugPre, TUG_PRE_DATE,
 } from './logic.js';
 import { firebaseConfig, TEACHER_EMAIL } from './firebase-config.js';
 
@@ -109,7 +110,8 @@ function loadMy() {
   } catch (e) { /* 무시 */ }
   return { g: 0, c: 0 };
 }
-const ui = { tab: 'rank', rankG: 1, evId: 'march', evG: 1, cultG: 1, planG: 0, my: loadMy() };
+const ui = { tab: 'rank', rankG: 1, evId: 'march', evG: 1, cultG: 1, planG: 0, preSetup: false, my: loadMy() };
+const TUG_EVENT = EVENTS.find((e) => e.id === 'tug');
 const canEdit = () => !!user;
 
 const TABS = [
@@ -399,7 +401,7 @@ function tugBody(ev, g, res, edit) {
   const match = (title, a, b, ia, ib, winKey, winner) => `
     <div class="match">
       <h3>${title}</h3>
-      ${edit ? `<div class="vs">${slotSel(ia)}<span class="x">VS</span>${slotSel(ib)}</div><div class="win-note">이긴 반을 눌러 주세요</div>` : ''}
+      ${edit && !res.linked ? `<div class="vs">${slotSel(ia)}<span class="x">VS</span>${slotSel(ib)}</div><div class="win-note">이긴 반을 눌러 주세요</div>` : ''}
       <div class="vs" style="margin-top:8px">${team(winKey, a, winner, a !== null && b !== null)}<span class="x">VS</span>${team(winKey, b, winner, a !== null && b !== null)}</div>
     </div>`;
   const finalMatch = `
@@ -416,6 +418,7 @@ function tugBody(ev, g, res, edit) {
     .join('');
   return `
     <p class="hint" style="margin:0 0 10px">${TUG_PRELIM}</p>
+    ${res.linked ? '<div class="warn" style="background:var(--sky-50);color:var(--blue)">4강 진출 반은 “줄다리기 예선” 결과에서 자동으로 채워져요.</div>' : ''}
     <div class="sub-title">4강 · 결승</div>
     ${match('4강 1경기', s0, s1, 0, 1, 'w1', res.w1)}
     ${match('4강 2경기', s2, s3, 2, 3, 'w2', res.w2)}
@@ -426,20 +429,108 @@ function tugBody(ev, g, res, edit) {
 }
 
 function viewEvent() {
-  const ev = EVENTS.find((e) => e.id === ui.evId);
   const g = ui.evG;
-  const res = computeEvent(state, ev, g);
   const edit = canEdit();
+  const chipList = EVENTS.flatMap((e) =>
+    e.id === 'tug'
+      ? [{ id: 'tugpre', name: '줄다리기 예선' }, { id: 'tug', name: '줄다리기 본선' }]
+      : [{ id: e.id, name: e.name }],
+  );
+  const head = `<div class="chips">${chipList.map((e) => `<button class="${e.id === ui.evId ? 'on' : ''}" data-action="ev" data-id="${e.id}">${e.name}</button>`).join('')}</div>${gradeSeg('evg', g)}`;
+
+  if (ui.evId === 'tugpre') {
+    const pre = resolveTugPre(state, g);
+    const done = pre.semis.every((c) => c !== null);
+    return `
+      <section class="card">
+        ${head}
+        <div class="sec-head"><h2>줄다리기 예선 · ${g}학년</h2><span class="badge ${done ? 'done' : pre.hasData ? 'live' : ''}">${done ? '4강 확정' : pre.hasData ? '진행중' : '대진 대기'}</span></div>
+        ${tugPreBody(g, pre)}
+      </section>`;
+  }
+
+  const ev = EVENTS.find((e) => e.id === ui.evId);
+  const res = computeEvent(state, ev, g);
   const body = { rank: marchBody, count: marathonBody, league: leagueBody, tug: tugBody }[ev.type](ev, g, res, edit);
   const st = eventStatus(res);
   return `
     <section class="card">
-      <div class="chips">${EVENTS.map((e) => `<button class="${e.id === ev.id ? 'on' : ''}" data-action="ev" data-id="${e.id}">${e.name}</button>`).join('')}</div>
-      ${gradeSeg('evg', g)}
-      <div class="sec-head"><h2>${ev.name} · ${g}학년</h2><span class="badge ${st}">${{ done: '입력 완료', live: '진행중', wait: '대기' }[st]}</span></div>
+      ${head}
+      <div class="sec-head"><h2>${ev.type === 'tug' ? '줄다리기 본선' : ev.name} · ${g}학년</h2><span class="badge ${st}">${{ done: '입력 완료', live: '진행중', wait: '대기' }[st]}</span></div>
       ${pointStrip(ev)}
       ${body}
     </section>`;
+}
+
+// 줄다리기 예선전: 대진(조편성)은 관리 교사가 추첨 뒤에 입력하고, 4강 진출 반이 본선으로 자동 연결됩니다.
+function tugPreBody(g, pre) {
+  const edit = canEdit();
+  const setup = edit && ui.preSetup;
+  const ids = pre.tpl.ids;
+  const used = new Set();
+  pre.matches.forEach((m) => { [m.aRaw, m.bRaw].forEach((v) => { if (typeof v === 'number') used.add(v); }); });
+  pre.semiRaw.forEach((v) => { if (typeof v === 'number') used.add(v); });
+  const isRef = (raw) => typeof raw === 'string' && /^W\d+$/.test(raw);
+  const slotLabel = (raw, cls) => (cls !== null ? label(g, cls) : isRef(raw) ? `${raw.slice(1)}경기 승자` : '미정');
+  const options = (raw, beforeId) =>
+    `<option value="" ${raw === '' || raw === undefined ? 'selected' : ''}>미정</option>` +
+    classes(g).map((c) => `<option value="${c}" ${raw === c ? 'selected' : ''} ${used.has(c) && raw !== c ? 'disabled' : ''}>${label(g, c)}</option>`).join('') +
+    ids.filter((id) => beforeId === undefined || id < beforeId).map((id) => `<option value="W${id}" ${raw === 'W' + id ? 'selected' : ''}>${id}경기 승자</option>`).join('');
+  const sel = (k, side, raw, beforeId, name) =>
+    `<select data-act="pslot" data-key="${k}"${side ? ` data-side="${side}"` : ''} aria-label="${name}">${options(raw, beforeId)}</select>`;
+
+  const matchCard = (m) => {
+    const active = m.a !== null && m.b !== null;
+    const box = (cls, raw) =>
+      cls === null
+        ? `<div class="team empty-t">${slotLabel(raw, null)}</div>`
+        : edit && active
+          ? `<button class="team ${m.w === cls ? 'win' : ''}" data-action="pwin" data-m="${m.id}" data-c="${cls}">${label(g, cls)}</button>`
+          : `<div class="team ${m.w === cls ? 'win' : ''}">${label(g, cls)}</div>`;
+    return `
+      <div class="match">
+        <h3>예선 ${m.id}경기${m.w !== null ? ' · ' + label(g, m.w) + ' 승' : ''}</h3>
+        ${setup ? `<div class="vs">${sel('m' + m.id, 'a', m.aRaw, m.id, m.id + '경기 첫째 칸')}<span class="x">VS</span>${sel('m' + m.id, 'b', m.bRaw, m.id, m.id + '경기 둘째 칸')}</div>` : ''}
+        <div class="vs" ${setup ? 'style="margin-top:8px"' : ''}>${box(m.a, m.aRaw)}<span class="x">VS</span>${box(m.b, m.bRaw)}</div>
+        ${edit && active && !setup ? '<div class="win-note">이긴 반을 눌러 주세요</div>' : ''}
+      </div>`;
+  };
+
+  const rounds = [...new Set(ids.map((id) => pre.tpl.round[id]))];
+  const roundsHtml = rounds
+    .map((r) => `<div class="sub-title">${r}라운드</div>${pre.matches.filter((m) => m.round === r).map(matchCard).join('')}`)
+    .join('');
+
+  const semiBox = (i) => `<div class="team ${pre.semis[i] === null ? 'empty-t' : ''}">${slotLabel(pre.semiRaw[i], pre.semis[i])}</div>`;
+  const semiPair = (title, i, j) => `
+    <div class="match final">
+      <h3>${title}</h3>
+      ${setup ? `<div class="vs">${sel('s' + i, '', pre.semiRaw[i], undefined, title + ' 첫째 칸')}<span class="x">VS</span>${sel('s' + j, '', pre.semiRaw[j], undefined, title + ' 둘째 칸')}</div>` : ''}
+      <div class="vs" ${setup ? 'style="margin-top:8px"' : ''}>${semiBox(i)}<span class="x">VS</span>${semiBox(j)}</div>
+    </div>`;
+
+  const linkLine = pre.hasData
+    ? pre.linked ? '예선 결과가 줄다리기 본선 4강에 자동으로 연결돼요.' : '본선 자동 연결이 꺼져 있어요. (본선 탭에서 4강을 직접 골라요)'
+    : '';
+  const setupBtn = edit
+    ? `<button class="btn amber sm" data-action="presetup" style="margin-bottom:10px">${ui.preSetup ? '대진 설정 닫기' : '대진 설정 (관리 교사)'}</button>`
+    : '';
+  const setupTools = setup
+    ? `<div class="grp"><div class="grp-head"><b>관리 교사 설정</b></div>
+        <div class="muted" style="margin-bottom:8px">추첨 결과에 맞게 각 경기의 칸을 고르세요. “N경기 승자”를 고르면 그 경기에서 이긴 반이 자동으로 올라와요. 반은 한 번만 쓸 수 있어요.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm" data-action="prelink">${pre.linked ? '본선 자동 연결: 켜짐 (끄기)' : '본선 자동 연결: 꺼짐 (켜기)'}</button>
+          <button class="btn ghost sm" data-action="preclear">이 학년 예선 지우기</button>
+        </div></div>`
+    : '';
+
+  return `
+    <p class="hint" style="margin:0 0 10px">${g}학년 줄다리기 예선전: ${TUG_PRE_DATE[g]} ${linkLine ? '· ' + linkLine : ''}</p>
+    ${setupBtn}${setupTools}
+    ${pre.hasData || setup ? roundsHtml : '<div class="empty">예선 대진이 아직 없어요. 추첨이 끝나면 관리 교사가 입력해요.</div>'}
+    <div class="sub-title">본선 4강 진출</div>
+    ${semiPair('본선 4강 1경기', 0, 1)}
+    ${semiPair('본선 4강 2경기', 2, 3)}`;
 }
 
 // ── 3. 스포츠문화상 ──
@@ -600,9 +691,11 @@ function applyTug(g, patch) {
   for (const [k, v] of Object.entries(patch)) { if (v === null) delete t[k]; else t[k] = v; }
   const n = (v) => (typeof v === 'number' ? v : null);
   const ok = (w, a, b) => w !== null && a !== null && b !== null && (w === a || w === b);
+  const eff = computeEvent(state, TUG_EVENT, g);
+  const S = eff.linked ? eff.semis : [t.s0, t.s1, t.s2, t.s3].map(n); // 예선 연결 중이면 예선 결과의 4강
   // 대진이 바뀌어서 맞지 않게 된 승자 기록은 함께 지웁니다.
-  if (!ok(n(t.w1), n(t.s0), n(t.s1))) delete t.w1;
-  if (!ok(n(t.w2), n(t.s2), n(t.s3))) delete t.w2;
+  if (!ok(n(t.w1), S[0], S[1])) delete t.w1;
+  if (!ok(n(t.w2), S[2], S[3])) delete t.w2;
   if (!ok(n(t.wf), n(t.w1), n(t.w2))) delete t.wf;
   for (const f of ['s0', 's1', 's2', 's3', 'w1', 'w2', 'wf']) {
     if (t[f] !== old[f]) {
@@ -630,6 +723,25 @@ document.addEventListener('click', (e) => {
       try { localStorage.setItem('sd-my', JSON.stringify(ui.my)); } catch (err) { /* 무시 */ }
       window.scrollTo(0, 0);
       render();
+      break;
+    case 'presetup': ui.preSetup = !ui.preSetup; render(); break;
+    case 'pwin': {
+      if (!canEdit()) return;
+      const g = ui.evG;
+      const c = Number(d.c);
+      const m = resolveTugPre(state, g).matches.find((x) => x.id === Number(d.m));
+      const path = ['tugPre', String(g), 'm' + d.m, 'w'];
+      if (m && m.w === c) delVal(path); else setVal(path, c);
+      break;
+    }
+    case 'prelink': {
+      if (!canEdit()) return;
+      const g = ui.evG;
+      setVal(['tugPre', String(g), 'link'], !resolveTugPre(state, g).linked);
+      break;
+    }
+    case 'preclear':
+      if (canEdit() && confirm(`${ui.evG}학년 줄다리기 예선 대진과 결과를 모두 지울까요?`)) delVal(['tugPre', String(ui.evG)]);
       break;
     case 'login-open': openLogin(); break;
     case 'login-cancel': $('#loginModal').hidden = true; break;
@@ -690,6 +802,12 @@ document.addEventListener('change', (e) => {
     case 'march': t.value === '' ? delVal(['march', key(g, c)]) : setVal(['march', key(g, c)], Number(t.value)); break;
     case 'mar': putNumber(['marathon', key(g, c), t.dataset.f], t.value, 9999); break;
     case 'fin': t.value === '' ? delVal([t.dataset.ev, 'final', key(g, c)]) : setVal([t.dataset.ev, 'final', key(g, c)], Number(t.value)); break;
+    case 'pslot': {
+      const raw = t.value;
+      const v = raw === '' ? '' : /^W\d+$/.test(raw) ? raw : Number(raw);
+      setVal(['tugPre', String(g), t.dataset.key].concat(t.dataset.side ? [t.dataset.side] : []), v);
+      break;
+    }
     case 'semi': applyTug(g, { ['s' + t.dataset.slot]: t.value === '' ? null : Number(t.value) }); break;
     case 'cult': {
       const item = CULTURE.find((x) => x.id === t.dataset.f);
