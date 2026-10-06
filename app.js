@@ -110,7 +110,7 @@ function loadMy() {
   } catch (e) { /* 무시 */ }
   return { g: 0, c: 0 };
 }
-const ui = { tab: 'rank', rankG: 1, evId: 'march', evG: 1, cultG: 1, planG: 0, preSetup: false, my: loadMy() };
+const ui = { tab: 'rank', rankG: 1, rankEv: 'all', evId: 'march', evG: 1, cultG: 1, planG: 0, preSetup: false, my: loadMy() };
 const TUG_EVENT = EVENTS.find((e) => e.id === 'tug');
 const canEdit = () => !!user;
 
@@ -243,48 +243,83 @@ function myClassCard(all) {
     </section>`;
 }
 
+function rankEventTable(gr, ev, g) {
+  const res = gr.events[ev.id];
+  const me = ui.my;
+  const list = classes(g).map((c) => ({ c, ...res.byClass[c] }));
+  list.sort((x, y) => (y.points ?? -1) - (x.points ?? -1) || x.c - y.c);
+  let prev = null;
+  let place = 0;
+  list.forEach((x, i) => {
+    if (x.points === null || x.points === undefined) { x.show = null; return; }
+    if (x.points !== prev) { place = i + 1; prev = x.points; }
+    x.show = place;
+  });
+  const rows = list
+    .map(
+      (x) => `<tr class="click ${me.g === g && me.c === x.c ? 'me' : ''}" data-action="pickmy" data-g="${g}" data-c="${x.c}">
+        <td>${rk(x.show)}</td><td class="cls">${label(g, x.c)}</td><td>${x.text}</td>${pt(x.points)}</tr>`,
+    )
+    .join('');
+  const st = eventStatus(res);
+  const stText = { done: '완료', live: '진행중', wait: '대기' }[st];
+  return `<div class="status-row"><span class="badge ${st}">${ev.name} ${stText}</span></div>
+    <div class="tbl-wrap"><table class="rank-tbl">
+      <thead><tr><th>순위</th><th>반</th><th>결과</th><th>점수</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <p class="hint">${ev.name}만의 순위예요. 점수가 같으면 같은 순위로 보여요. 반을 누르면 “우리 반 기록”에서 볼 수 있어요.</p>`;
+}
+
 function viewRank() {
   const all = computeAll(state);
   const gr = all[ui.rankG];
-  const chips = EVENTS.map((ev) => {
-    const st = eventStatus(gr.events[ev.id]);
-    return `<span class="badge ${st}">${ev.name} ${{ done: '완료', live: '진행중', wait: '대기' }[st]}</span>`;
-  }).join('');
+  const evSel = EVENTS.find((e) => e.id === ui.rankEv);
+  if (!evSel) ui.rankEv = 'all';
 
-  let podium = '<div class="empty">아직 입력된 기록이 없어요. 경기가 시작되면 여기에 순위가 나타나요.</div>';
-  if (gr.any) {
-    const top = gr.sorted.slice(0, 3);
-    const order = [1, 0, 2].filter((i) => top[i]);
-    podium = `<div class="podium">${order
-      .map((i) => {
-        const r = top[i];
-        return `<div class="pod ${i === 0 ? 'r1' : ''}"><div class="medal m${Math.min(r.rank, 4)}">${r.rank}</div><div class="cls">${r.label}</div><div class="pt">${r.total}점</div></div>`;
-      })
-      .join('')}</div>`;
-  }
+  const chips = `<div class="chips"><button class="${ui.rankEv === 'all' ? 'on' : ''}" data-action="rankev" data-id="all">종합</button>${EVENTS.map(
+    (e) => `<button class="${e.id === ui.rankEv ? 'on' : ''}" data-action="rankev" data-id="${e.id}">${e.name}</button>`,
+  ).join('')}</div>`;
 
-  const me = ui.my;
-  const rows = gr.sorted
-    .map(
-      (r) => `<tr class="click ${me.g === r.g && me.c === r.c ? 'me' : ''}" data-action="pickmy" data-g="${r.g}" data-c="${r.c}">
+  let body;
+  if (evSel) {
+    body = rankEventTable(gr, evSel, ui.rankG);
+  } else {
+    let podium = '<div class="empty">아직 입력된 기록이 없어요. 경기가 시작되면 여기에 순위가 나타나요.</div>';
+    if (gr.any) {
+      const top = gr.sorted.slice(0, 3);
+      const order = [1, 0, 2].filter((i) => top[i]);
+      podium = `<div class="podium">${order
+        .map((i) => {
+          const r = top[i];
+          return `<div class="pod ${i === 0 ? 'r1' : ''}"><div class="medal m${Math.min(r.rank, 4)}">${r.rank}</div><div class="cls">${r.label}</div><div class="pt">${r.total}점</div></div>`;
+        })
+        .join('')}</div>`;
+    }
+    const me = ui.my;
+    const rows = gr.sorted
+      .map(
+        (r) => `<tr class="click ${me.g === r.g && me.c === r.c ? 'me' : ''}" data-action="pickmy" data-g="${r.g}" data-c="${r.c}">
         <td>${rk(r.rank)}</td><td class="cls">${r.label}</td>
         ${EVENTS.map((ev) => pt(r.pts[ev.id])).join('')}
         <td class="total">${r.total}</td></tr>`,
-    )
-    .join('');
+      )
+      .join('');
+    body = `${podium}
+      <div class="tbl-wrap"><table class="rank-tbl">
+        <thead><tr><th>순위</th><th>반</th>${EVENTS.map((ev) => `<th>${ev.head.join('<br>')}</th>`).join('')}<th>합계</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <p class="hint">반을 누르면 위의 “우리 반 기록”에서 볼 수 있어요. 동점이면 ${TIE_BREAK.map((id) => EVENTS.find((e) => e.id === id).name).join(' → ')} 점수가 높은 반이 앞서요. 경기가 끝나기 전 순위는 잠정이에요.</p>`;
+  }
 
   return `
     ${myClassCard(all)}
     <section class="card">
       <div class="sec-head"><h2>학년별 실시간 순위</h2></div>
       ${gradeSeg('rankg', ui.rankG)}
-      <div class="status-row">${chips}</div>
-      ${podium}
-      <div class="tbl-wrap"><table class="rank-tbl">
-        <thead><tr><th>순위</th><th>반</th>${EVENTS.map((ev) => `<th>${ev.head.join('<br>')}</th>`).join('')}<th>합계</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>
-      <p class="hint">반을 누르면 위의 “우리 반 기록”에서 볼 수 있어요. 동점이면 ${TIE_BREAK.map((id) => EVENTS.find((e) => e.id === id).name).join(' → ')} 점수가 높은 반이 앞서요. 경기가 끝나기 전 순위는 잠정이에요.</p>
+      ${chips}
+      ${body}
     </section>`;
 }
 
@@ -727,6 +762,7 @@ document.addEventListener('click', (e) => {
     case 'tab': ui.tab = d.id; window.scrollTo(0, 0); render(); break;
     case 'rankg': ui.rankG = Number(d.g); render(); break;
     case 'ev': ui.evId = d.id; render(); break;
+    case 'rankev': ui.rankEv = d.id; render(); break;
     case 'evg': ui.evG = Number(d.g); render(); break;
     case 'cultg': ui.cultG = Number(d.g); render(); break;
     case 'plang': ui.planG = Number(d.g); render(); break;
