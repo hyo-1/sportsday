@@ -182,13 +182,13 @@ function renderTop() {
       <h1>체육대회 실시간 현황판</h1>
       <div class="top-row">
         <span class="live"><i class="dot ${dot}"></i>${text}${upd}</span>
-        ${user ? '' : '<button class="btn light sm" data-action="login-open">점수 입력</button>'}
       </div>
+      ${user ? '' : '<button class="admin-link" data-action="login-open">관리모드</button>'}
     </div>`;
   const bar = $('#editbar');
   bar.hidden = !user;
   bar.innerHTML = user
-    ? `<div class="editbar-inner"><span>점수 입력 모드 · 입력하면 모두의 화면에 바로 반영돼요</span><button class="btn amber sm" data-action="logout">입력 끝내기</button></div>`
+    ? `<div class="editbar-inner"><span>관리 모드 · 입력하면 모두의 화면에 바로 반영돼요</span><button class="btn amber sm" data-action="logout">입력 끝내기</button></div>`
     : '';
 }
 
@@ -757,7 +757,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'login-open': openLogin(); break;
     case 'login-cancel': $('#loginModal').hidden = true; break;
-    case 'logout': store.logout().then(() => flash('입력 모드를 끝냈어요')); break;
+    case 'logout': store.logout().then(() => flash('관리 모드를 끝냈어요')); break;
     case 'adv': {
       if (!canEdit()) return;
       const g = ui.evG;
@@ -837,6 +837,7 @@ document.addEventListener('change', (e) => {
 
 function openLogin() {
   $('#loginErr').textContent = '';
+  $('#loginModal h2').textContent = '관리 모드';
   $('#pin').value = '';
   const note = $('#loginModal .muted');
   note.textContent = store && store.mode === 'demo' ? '연습 모드예요. 번호는 123456 입니다.' : '교사용 번호(숫자 6자리)를 입력하세요.';
@@ -853,7 +854,7 @@ $('#loginForm').addEventListener('submit', async (e) => {
   try {
     await store.login($('#pin').value.trim());
     $('#loginModal').hidden = true;
-    flash('입력 모드가 켜졌어요');
+    flash('관리 모드가 켜졌어요');
   } catch (err) {
     console.error(err);
     $('#loginErr').textContent = errText(err);
