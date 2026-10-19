@@ -204,7 +204,7 @@ button.team:disabled { cursor: default; }
 .tl .tm small { display: block; font-weight: 600; color: var(--muted); font-size: 12.5px; }
 .tl .tt { font-weight: 800; color: var(--navy); }
 .tl .tn { font-size: 13px; color: var(--muted); }
-.tl li.now { background: #fff7d6; border-radius: 12px; padding-left: 8px; padding-right: 8px; margin: 0 -8px; }
+.tl li.now { background: #eaf3ff; border-radius: 12px; padding-left: 8px; padding-right: 8px; margin: 0 -8px; }
 .pill { display: inline-block; font-size: 12px; font-weight: 800; padding: 2px 9px; border-radius: 999px; background: var(--sky-100); color: var(--blue); margin-right: 4px; }
 .pill.all { background: var(--blue); color: #fff; }
 .pill.comm { background: #e9f6ee; color: var(--ok); }
@@ -289,3 +289,6 @@ button.bt { cursor: pointer; }
 /* 입력 안내 상자 */
 .info { margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: #e8f3ff; color: #0d3b78; font-size: 13.5px; line-height: 1.6; border: 1px solid #b9d8fb; }
 select.auto { color: var(--muted); background: #f1f6fb; }
+
+.pill.plan { background: #cfe3fb; color: #0d47a1; }
+.plan-note { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
