@@ -24,9 +24,9 @@
   <div class="modal" id="loginModal" hidden>
     <form class="modal-box" id="loginForm" autocomplete="off">
       <h2>점수 입력 모드</h2>
-      <p class="muted">교사용 번호(숫자 6자리)를 입력하세요.</p>
-      <input id="pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12"
-             placeholder="••••••" aria-label="교사용 번호">
+      <p class="muted">교사용 비밀번호를 입력하세요.</p>
+      <input id="pin" class="pin" type="password" maxlength="64" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+             placeholder="••••••" aria-label="교사용 비밀번호">
       <p class="err" id="loginErr" role="alert"></p>
       <div class="modal-actions">
         <button type="button" class="btn ghost" data-action="login-cancel">취소</button>
