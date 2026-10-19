@@ -144,7 +144,7 @@ function errText(e) {
   const code = (e && e.code) || '';
   if (code.includes('permission-denied')) return '저장 권한이 없어요. 교사 로그인과 보안 규칙을 확인해 주세요.';
   if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found') || code.includes('invalid-login'))
-    return '번호가 맞지 않아요. 다시 입력해 주세요.';
+    return '비밀번호가 맞지 않아요. 다시 입력해 주세요.';
   if (code.includes('too-many-requests')) return '시도가 너무 많아요. 잠시 후 다시 해 주세요.';
   if (code.includes('network')) return '인터넷 연결을 확인해 주세요.';
   return '저장하지 못했어요: ' + (code || (e && e.message) || '알 수 없는 오류');
@@ -340,19 +340,34 @@ function pointStrip(ev) {
 }
 
 function marchBody(ev, g, res, edit) {
+  // 1~4위는 반마다 한 번씩만 고를 수 있어요 (이미 다른 반이 고른 순위는 눌러도 선택되지 않게 막아요).
+  const taken = {};
+  for (const c of classes(g)) {
+    const r = res.byClass[c];
+    if (r.rank !== null && r.rank <= 4 && !r.auto) (taken[r.rank] = taken[r.rank] || []).push(c);
+  }
+  const dup = Object.values(taken).some((x) => x.length > 1);
   const rows = classes(g)
     .map((c) => {
       const r = res.byClass[c];
       const cell = edit
-        ? `<select data-act="march" data-c="${c}"><option value="">순위 선택</option>${[1, 2, 3, 4, 5]
-            .map((n) => `<option value="${n}" ${r.rank === n ? 'selected' : ''}>${n === 5 ? '5위 이하' : n + '위'}</option>`)
+        ? `<select data-act="march" data-c="${c}" class="${r.auto ? 'auto' : ''}"><option value="">${r.auto ? '자동 · 5위 이하' : '순위 선택'}</option>${[1, 2, 3, 4, 5]
+            .map((n) => {
+              const used = n <= 4 && (taken[n] || []).some((x) => x !== c);
+              const label5 = n === 5 ? '5위 이하' : n + '위';
+              return `<option value="${n}" ${!r.auto && r.rank === n ? 'selected' : ''} ${used ? 'disabled' : ''}>${label5}${used ? ' (선택됨)' : ''}</option>`;
+            })
             .join('')}</select>`
-        : `<b>${r.text}</b>`;
+        : `<b>${r.text}${r.auto ? ' <span class="muted">(자동)</span>' : ''}</b>`;
       return `<tr><td class="cls">${label(g, c)}</td><td>${cell}</td>${pt(r.points)}</tr>`;
     })
     .join('');
-  return `<div class="tbl-wrap"><table><thead><tr><th>반</th><th>순위</th><th>점수</th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${edit ? '<p class="hint">심사 결과 순위를 골라 주세요. 5위부터는 모두 “5위 이하”로 입력해요.</p>' : ''}`;
+  const guide = edit
+    ? `<div class="info"><b>입력 방법</b><br>· 1~4위는 한 번씩만 고를 수 있어요. 다른 반이 고른 순위는 “(선택됨)”으로 표시되고 선택되지 않아요.<br>· 1·2·3·4위를 모두 고르면 나머지 반은 <b>자동으로 5위 이하(${ev.points[4]}점)</b>가 돼요.<br>· 순위를 바꾸려면 그 반의 선택을 먼저 “순위 선택”으로 되돌려 주세요.</div>`
+    : '';
+  const warn = dup ? '<div class="warn">같은 순위를 고른 반이 있어요. 한쪽을 다시 선택해 주세요.</div>' : '';
+  return `${guide}<div class="tbl-wrap"><table><thead><tr><th>반</th><th>순위</th><th>점수</th></tr></thead><tbody>${rows}</tbody></table></div>${warn}
+    <p class="hint">${edit ? '심사 결과 순위를 골라 주세요.' : '1~4위가 모두 정해지면 나머지 반은 자동으로 5위 이하예요.'}</p>`;
 }
 
 function marathonBody(ev, g, res, edit) {
@@ -400,7 +415,10 @@ function leagueBody(ev, g, res, edit) {
         .map(({ c, r }) => {
           const cell = edit
             ? `<select data-act="fin" data-ev="${ev.id}" data-c="${c}"><option value="">순위 선택</option>${[1, 2, 3, 4, 5, 6]
-                .map((n) => `<option value="${n}" ${r.rank === n ? 'selected' : ''}>${n}위</option>`)
+                .map((n) => {
+                  const used = fin.some((x) => x.c !== c && x.r.rank === n);
+                  return `<option value="${n}" ${r.rank === n ? 'selected' : ''} ${used ? 'disabled' : ''}>${n}위${used ? ' (선택됨)' : ''}</option>`;
+                })
                 .join('')}</select>`
             : `<b>${r.text}</b>`;
           return `<div class="fin-row"><span class="cls">${label(g, c)}</span>${cell}<span class="pts">${ptText(r.points)}</span></div>`;
@@ -418,7 +436,7 @@ function leagueBody(ev, g, res, edit) {
   return `
     <div class="sub-title">조 편성 · 예선 ${edit ? '<span class="muted">(이긴 반을 눌러 선택, 다시 누르면 취소)</span>' : ''}</div>
     ${grp}
-    <div class="sub-title">결승 리그 (${fin.length}/${res.groups.length * ADVANCE_PER_GROUP}개 반)</div>
+    <div class="sub-title">결승 리그 (${fin.length}/${res.groups.length * ADVANCE_PER_GROUP}개 반)${edit ? ' <span class="muted">(순위는 한 번씩만 고를 수 있어요)</span>' : ''}</div>
     <div class="grp final-box">${finHtml}</div>
     <div class="sub-title">반별 점수</div>
     <div class="tbl-wrap"><table><thead><tr><th>반</th><th>결과</th><th>점수</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -901,7 +919,7 @@ function openLogin() {
   $('#loginModal h2').textContent = '관리 모드';
   $('#pin').value = '';
   const note = $('#loginModal .muted');
-  note.textContent = store && store.mode === 'demo' ? '연습 모드예요. 번호는 123456 입니다.' : '교사용 번호(숫자 6자리)를 입력하세요.';
+  note.textContent = store && store.mode === 'demo' ? '연습 모드예요. 비밀번호는 123456 입니다.' : '교사용 비밀번호를 입력하세요.';
   $('#loginModal').hidden = false;
   setTimeout(() => $('#pin').focus(), 50);
 }
