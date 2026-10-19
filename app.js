@@ -651,7 +651,7 @@ function viewPlan() {
   const li = (it, i) => `
     <li class="${i === now ? 'now' : ''}">
       <div class="tm">${it.from}${it.to ? `<small>~ ${it.to}</small>` : ''}</div>
-      <div><div class="tt">${it.title}${i === now ? ' <span class="pill" style="background:var(--amber);color:#fff">지금</span>' : ''}</div>
+      <div><div class="tt">${it.title}${i === now ? ' <span class="pill plan">예정 시간</span>' : ''}</div>
         <div>${gradePills(it)}</div>${it.note ? `<div class="tn">${it.note}</div>` : ''}</div>
     </li>`;
   const part = (name) => {
@@ -663,6 +663,7 @@ function viewPlan() {
     <section class="card">
       <div class="sec-head"><h2>프로그램 일정</h2></div>
       <div class="when"><b>${EVENT_INFO.date}</b><div class="muted">${EVENT_INFO.place} · ${EVENT_INFO.rain}</div></div>
+      <div class="plan-note">${now >= 0 ? '지금 시각이 속한 일정에 “예정 시간”이 표시돼요. ' : ''}일정은 <b>예정 시간 기준</b>이라 현장 상황에 따라 달라질 수 있어요.</div>
       ${seg}
       ${part('오전')}${part('오후')}
     </section>`;
@@ -959,7 +960,7 @@ async function init() {
     (data) => { state = data; queueRender(); },
     (s) => { status = s; queueRender(); },
   );
-  // 일정 화면의 "지금" 표시가 시간이 지나도 맞도록 1분마다 다시 그립니다.
+  // 일정 화면의 "예정 시간" 표시가 시간이 지나도 맞도록 1분마다 다시 그립니다.
   setInterval(() => { if (ui.tab === 'plan') queueRender(); }, 60000);
 }
 
