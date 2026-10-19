@@ -70,14 +70,19 @@ function competitionRanks(items) {
 
 function computeRankEvent(state, ev, g) {
   const m = state.march || {};
+  const stored = {};
+  for (const c of classes(g)) stored[c] = num(m[key(g, c)]);
+  // 1·2·3·4위가 모두 정해지면 아직 비어 있는 반은 자동으로 "5위 이하"가 됩니다.
+  const top4 = [1, 2, 3, 4].every((n) => classes(g).some((c) => stored[c] === n));
   const byClass = {};
   let count = 0;
   for (const c of classes(g)) {
-    const r = num(m[key(g, c)]);
+    const auto = top4 && stored[c] === null;
+    const r = auto ? 5 : stored[c];
     if (r !== null) count++;
-    byClass[c] = { rank: r, points: pointsFor(ev, r), text: r === null ? '-' : r >= 5 ? '5위 이하' : `${r}위` };
+    byClass[c] = { rank: r, auto, points: pointsFor(ev, r), text: r === null ? '-' : r >= 5 ? '5위 이하' : `${r}위` };
   }
-  return { byClass, complete: count === CLASS_COUNT[g], started: count > 0 };
+  return { byClass, complete: count === CLASS_COUNT[g], started: count > 0, top4 };
 }
 
 function computeCountEvent(state, ev, g) {
