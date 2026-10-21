@@ -190,12 +190,14 @@ function renderTop() {
       <div class="top-row">
         <span class="live"><i class="dot ${dot}"></i>${text}${upd}</span>
       </div>
-      ${user ? '' : '<button class="admin-link" data-action="login-open">관리모드</button>'}
+      ${user
+        ? '<button class="hdr-go" data-action="go-marathon" aria-label="8자 마라톤 입력으로 바로 가기"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7.5" r="4"/><circle cx="12" cy="16.5" r="4.5"/></svg></span><span class="tx">8자입력</span></button>'
+        : '<button class="admin-link" data-action="login-open">관리모드</button>'}
     </div>`;
   const bar = $('#editbar');
   bar.hidden = !user;
   bar.innerHTML = user
-    ? `<div class="editbar-inner"><span>관리 모드 · 입력하면 모두의 화면에 바로 반영돼요</span><button class="btn amber sm" data-action="logout">입력 끝내기</button></div>`
+    ? `<div class="editbar-inner"><span class="eb-text">관리 모드 · 입력하면 모두의 화면에 바로 반영돼요</span><button class="btn amber sm" data-action="logout">입력 끝내기</button></div>`
     : '';
 }
 
@@ -377,9 +379,9 @@ function marathonBody(ev, g, res, edit) {
       const r = res.byClass[c];
       const inp = (f, v) =>
         edit
-          ? `<td><input class="num" type="number" inputmode="numeric" min="0" data-act="mar" data-f="${f}" data-c="${c}" value="${v === null ? '' : v}" aria-label="${label(g, c)} ${f === 'a' ? '1차' : '2차'} 횟수"></td>`
+          ? `<td><input class="num" type="number" inputmode="numeric" min="0" data-act="mar" data-f="${f}" data-c="${c}" placeholder="${f === 'a' ? '1차' : '2차'}" value="${v === null ? '' : v}" aria-label="${label(g, c)} ${f === 'a' ? '1차' : '2차'} 횟수"></td>`
           : `<td class="num">${v === null ? '-' : v}</td>`;
-      return `<tr><td class="cls">${label(g, c)}</td>${inp('a', r.a)}${inp('b', r.b)}
+      return `<tr id="mar-row-${c}" class="${ui.my.g === g && ui.my.c === c ? 'me' : ''}"><td class="cls">${label(g, c)}</td>${inp('a', r.a)}${inp('b', r.b)}
         <td class="num"><b>${r.total === null ? '-' : r.total}</b></td><td>${r.rank === null ? '<span class="muted">' + (r.total === null ? '-' : '집계중') + '</span>' : rk(r.rank)}</td>${pt(r.points)}</tr>`;
     })
     .join('');
@@ -387,6 +389,38 @@ function marathonBody(ev, g, res, edit) {
     <div class="grp"><div class="grp-head"><b>조 편성</b></div><div class="muted">${groups}</div></div>
     <div class="tbl-wrap"><table><thead><tr><th>반</th><th>1차<br>(횟수)</th><th>2차<br>(횟수)</th><th>합계</th><th>순위</th><th>점수</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="hint">${edit ? '1차·2차 뛰어넘은 횟수를 입력하면 합계가 높은 순으로 순위가 자동 계산돼요.' : '두 번의 기록을 합한 횟수가 높은 순서로 순위가 정해져요.'}</p>`;
+}
+
+function relayLaneBlock(g, edit) {
+  const lanes = (state.relayLane && state.relayLane[g]) || {};
+  const any = GROUPS[g].some((_, i) => Object.keys(lanes['g' + (i + 1)] || {}).length);
+  const groups = GROUPS[g]
+    .map((members, i) => {
+      const no = i + 1;
+      const cur = lanes['g' + no] || {};
+      const used = new Set(Object.values(cur).map(Number));
+      const cells = members
+        .map((_, k) => {
+          const lane = k + 1;
+          const v = cur['l' + lane] !== undefined ? Number(cur['l' + lane]) : null;
+          const inner = edit
+            ? `<select data-act="lane" data-grp="${no}" data-lane="${lane}" aria-label="${no}조 ${lane}트랙"><option value="">미정</option>${members
+                .map((c) => `<option value="${c}" ${v === c ? 'selected' : ''} ${used.has(c) && v !== c ? 'disabled' : ''}>${label(g, c)}${used.has(c) && v !== c ? ' (배정됨)' : ''}</option>`)
+                .join('')}</select>`
+            : `<b class="${v === null ? 'dim' : ''}">${v === null ? '미정' : label(g, v)}</b>`;
+          return `<div class="lane"><span class="ln">${lane}트랙</span>${inner}</div>`;
+        })
+        .join('');
+      return `<div class="grp"><div class="grp-head"><b>${no}조 트랙</b></div><div class="lane-grid">${cells}</div></div>`;
+    })
+    .join('');
+  const note = edit
+    ? '<div class="hint" style="margin:0 0 8px">조별로 트랙마다 어느 반이 뛰는지 골라 주세요. 한 조에서 같은 반은 한 번만 쓸 수 있고, 입력하면 모두의 화면에 보여요.</div>'
+    : !any
+      ? '<div class="hint" style="margin:0 0 8px">예선 트랙 배정이 정해지면 여기에 나타나요.</div>'
+      : '';
+  if (!edit && !any) return `<div class="sub-title">예선 트랙 배정 · ${g}학년</div>${note}`;
+  return `<div class="sub-title">예선 트랙 배정 · ${g}학년</div>${note}${groups}`;
 }
 
 function leagueBody(ev, g, res, edit) {
@@ -433,7 +467,9 @@ function leagueBody(ev, g, res, edit) {
     })
     .join('');
 
+  const laneBlock = ev.id === 'relay' ? relayLaneBlock(g, edit) : '';
   return `
+    ${laneBlock}
     <div class="sub-title">조 편성 · 예선 ${edit ? '<span class="muted">(이긴 반을 눌러 선택, 다시 누르면 취소)</span>' : ''}</div>
     ${grp}
     <div class="sub-title">결승 리그 (${fin.length}/${res.groups.length * ADVANCE_PER_GROUP}개 반)${edit ? ' <span class="muted">(순위는 한 번씩만 고를 수 있어요)</span>' : ''}</div>
@@ -806,6 +842,18 @@ document.addEventListener('click', (e) => {
     case 'tab': ui.tab = d.id; window.scrollTo(0, 0); render(); break;
     case 'rankg': ui.rankG = Number(d.g); render(); break;
     case 'ev': ui.evId = d.id; render(); break;
+    case 'go-marathon': {
+      if (!canEdit()) return;
+      ui.tab = 'event';
+      ui.evId = 'marathon';
+      if (ui.my.g) ui.evG = ui.my.g; // "우리 반"을 골라 두었다면 그 학년으로 바로 가요
+      render();
+      const row = ui.my.g === ui.evG && ui.my.c ? document.getElementById('mar-row-' + ui.my.c) : null;
+      const target = row || document.querySelector('.card .tbl-wrap');
+      if (target) target.scrollIntoView({ block: row ? 'center' : 'start' });
+      else window.scrollTo(0, 0);
+      break;
+    }
     case 'rankev': ui.rankEv = d.id; render(); break;
     case 'evg': ui.evG = Number(d.g); render(); break;
     case 'cultg': ui.cultG = Number(d.g); render(); break;
@@ -899,6 +947,11 @@ document.addEventListener('change', (e) => {
       const raw = t.value;
       const v = raw === '' ? '' : /^W\d+$/.test(raw) ? raw : Number(raw);
       setVal(['tugPre', String(g), t.dataset.key].concat(t.dataset.side ? [t.dataset.side] : []), v);
+      break;
+    }
+    case 'lane': {
+      const path = ['relayLane', String(g), 'g' + t.dataset.grp, 'l' + t.dataset.lane];
+      t.value === '' ? delVal(path) : setVal(path, Number(t.value));
       break;
     }
     case 'semi': applyTug(g, { ['s' + t.dataset.slot]: t.value === '' ? null : Number(t.value) }); break;
