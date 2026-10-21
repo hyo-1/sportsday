@@ -110,7 +110,7 @@ function loadMy() {
   } catch (e) { /* 무시 */ }
   return { g: 0, c: 0 };
 }
-const ui = { tab: 'rank', rankG: 1, rankEv: 'all', evId: 'march', evG: 1, cultG: 1, planG: 0, preSetup: false, my: loadMy() };
+const ui = { laneEdit: false, tab: 'rank', rankG: 1, rankEv: 'all', evId: 'march', evG: 1, cultG: 1, planG: 0, preSetup: false, my: loadMy() };
 const TUG_EVENT = EVENTS.find((e) => e.id === 'tug');
 const canEdit = () => !!user;
 
@@ -391,7 +391,8 @@ function marathonBody(ev, g, res, edit) {
     <p class="hint">${edit ? '1차·2차 뛰어넘은 횟수를 입력하면 합계가 높은 순으로 순위가 자동 계산돼요.' : '두 번의 기록을 합한 횟수가 높은 순서로 순위가 정해져요.'}</p>`;
 }
 
-function relayLaneBlock(g, edit) {
+function relayLaneBlock(g, canEditNow) {
+  const edit = canEditNow && ui.laneEdit; // 트랙은 "트랙 수정" 버튼을 눌러야 바꿀 수 있어요
   const lanes = (state.relayLane && state.relayLane[g]) || {};
   const any = GROUPS[g].some((_, i) => Object.keys(lanes['g' + (i + 1)] || {}).length);
   const groups = GROUPS[g]
@@ -411,16 +412,20 @@ function relayLaneBlock(g, edit) {
           return `<div class="lane"><span class="ln">${lane}트랙</span>${inner}</div>`;
         })
         .join('');
-      return `<div class="grp"><div class="grp-head"><b>${no}조 트랙</b></div><div class="lane-grid">${cells}</div></div>`;
+      return `<div class="grp lane-grp"><div class="lane-title">${no}조</div><div class="lane-grid ${edit ? 'edit' : ''}" style="--n:${members.length}">${cells}</div></div>`;
     })
     .join('');
   const note = edit
-    ? '<div class="hint" style="margin:0 0 8px">조별로 트랙마다 어느 반이 뛰는지 골라 주세요. 한 조에서 같은 반은 한 번만 쓸 수 있고, 입력하면 모두의 화면에 보여요.</div>'
+    ? '<div class="hint" style="margin:0 0 8px">조별로 트랙마다 어느 반이 뛰는지 골라 주세요. 한 조에서 같은 반은 한 번만 쓸 수 있고, 입력하면 모두의 화면에 보여요. 끝나면 “수정 닫기”를 눌러 주세요.</div>'
     : !any
       ? '<div class="hint" style="margin:0 0 8px">예선 트랙 배정이 정해지면 여기에 나타나요.</div>'
       : '';
-  if (!edit && !any) return `<div class="sub-title">예선 트랙 배정 · ${g}학년</div>${note}`;
-  return `<div class="sub-title">예선 트랙 배정 · ${g}학년</div>${note}${groups}`;
+  const btn = canEditNow
+    ? `<button class="btn ghost xs" data-action="lane-edit">${ui.laneEdit ? '수정 닫기' : '트랙 수정'}</button>`
+    : '';
+  const head = `<div class="lane-head"><div class="sub-title" style="margin:0">예선 트랙 배정 · ${g}학년</div>${btn}</div>`;
+  if (!edit && !any) return head + note;
+  return head + note + groups;
 }
 
 function leagueBody(ev, g, res, edit) {
@@ -861,6 +866,7 @@ document.addEventListener('click', (e) => {
       render();
       break;
     case 'presetup': ui.preSetup = !ui.preSetup; render(); break;
+    case 'lane-edit': if (canEdit()) { ui.laneEdit = !ui.laneEdit; render(); } break;
     case 'pwin': {
       if (!canEdit()) return;
       const g = ui.evG;
@@ -881,7 +887,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'login-open': openLogin(); break;
     case 'login-cancel': $('#loginModal').hidden = true; break;
-    case 'logout': store.logout().then(() => flash('관리 모드를 끝냈어요')); break;
+    case 'logout': ui.laneEdit = false; ui.preSetup = false; store.logout().then(() => flash('관리 모드를 끝냈어요')); break;
     case 'adv': {
       if (!canEdit()) return;
       const g = ui.evG;
