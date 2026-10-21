@@ -647,9 +647,9 @@ function viewEvent() {
 function scoreSelect(it, r) {
   const cur = r.vals[it.id];
   const opts = [];
-  for (let v = 0; v <= it.max; v += CULTURE_STEP) opts.push(v);
+  for (let v = it.max; v >= 0; v -= CULTURE_STEP) opts.push(v); // 만점부터 내려가요
   if (cur !== null && !opts.includes(cur)) opts.push(cur); // 예전에 입력된 값도 그대로 보여 줘요
-  opts.sort((x, y) => x - y);
+  opts.sort((x, y) => y - x);
   return `<select class="cs" data-act="cult" data-f="${it.id}" data-c="${r.c}" aria-label="${r.label} ${it.name}"><option value="">-</option>${opts
     .map((v) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${v}</option>`)
     .join('')}</select>`;
