@@ -846,12 +846,8 @@ document.addEventListener('click', (e) => {
       if (!canEdit()) return;
       ui.tab = 'event';
       ui.evId = 'marathon';
-      if (ui.my.g) ui.evG = ui.my.g; // "우리 반"을 골라 두었다면 그 학년으로 바로 가요
       render();
-      const row = ui.my.g === ui.evG && ui.my.c ? document.getElementById('mar-row-' + ui.my.c) : null;
-      const target = row || document.querySelector('.card .tbl-wrap');
-      if (target) target.scrollIntoView({ block: row ? 'center' : 'start' });
-      else window.scrollTo(0, 0);
+      window.scrollTo(0, 0); // 종목 버튼과 학년 선택 탭이 바로 보이는 위치
       break;
     }
     case 'rankev': ui.rankEv = d.id; render(); break;
