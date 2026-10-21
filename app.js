@@ -6,8 +6,8 @@ import {
   GRADES, CLASS_COUNT, EVENTS, CULTURE, ADVANCE_PER_GROUP, TIE_BREAK,
   SCHEDULE, EVENT_INFO, TUG_PRELIM, PLEDGE, GROUPS,
   classes, label, key,
-  computeAll, computeEvent, computeCulture, eventStatus,
-  resolveTugPre, TUG_PRE_DATE,
+  computeAll, computeEvent, computeCulture, eventStatus, bonusOf,
+  resolveTugPre, TUG_PRE_DATE, BONUS_BUTTONS, BONUS_CAP, CULTURE_STEP,
 } from './logic.js';
 import { firebaseConfig, TEACHER_EMAIL } from './firebase-config.js';
 
@@ -110,7 +110,7 @@ function loadMy() {
   } catch (e) { /* 무시 */ }
   return { g: 0, c: 0 };
 }
-const ui = { laneEdit: false, tab: 'rank', rankG: 1, rankEv: 'all', evId: 'march', evG: 1, cultG: 1, planG: 0, preSetup: false, my: loadMy() };
+const ui = { bonusOpen: false, bonusSel: { g: 0, c: 0 }, laneEdit: false, tab: 'rank', rankG: 1, rankEv: 'all', evId: 'march', evG: 1, cultG: 1, planG: 0, preSetup: false, my: loadMy() };
 const TUG_EVENT = EVENTS.find((e) => e.id === 'tug');
 const canEdit = () => !!user;
 
@@ -231,7 +231,7 @@ function myClassCard(all) {
       (ev) => `<div class="tile"><div class="t-name">${ev.name}</div><div class="t-res">${row.texts[ev.id]}</div><div class="t-pt">${ptText(row.pts[ev.id])}</div></div>`,
     ).join('');
     const culRes = cul.done ? `${cul.rank}위` : cul.total === null ? '-' : '집계중';
-    const culPt = cul.total === null ? '-' : `${cul.total}점`;
+    const culPt = cul.total === null ? '-' : `${cul.total}점${cul.bonus ? ` (가산 +${cul.bonus})` : ''}`;
     body = `
       <div class="my-hero">
         <div><div class="lbl">${label(g, c)} 종합 점수</div><div class="big">${row.total}점</div></div>
@@ -644,6 +644,56 @@ function viewEvent() {
 
 // ── 3. 스포츠문화상 ──
 
+function scoreSelect(it, r) {
+  const cur = r.vals[it.id];
+  const opts = [];
+  for (let v = 0; v <= it.max; v += CULTURE_STEP) opts.push(v);
+  if (cur !== null && !opts.includes(cur)) opts.push(cur); // 예전에 입력된 값도 그대로 보여 줘요
+  opts.sort((x, y) => x - y);
+  return `<select class="cs" data-act="cult" data-f="${it.id}" data-c="${r.c}" aria-label="${r.label} ${it.name}"><option value="">-</option>${opts
+    .map((v) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${v}</option>`)
+    .join('')}</select>`;
+}
+
+function bonusPanel() {
+  const sel = ui.bonusSel.g ? ui.bonusSel : { g: ui.cultG, c: 0 };
+  const g = sel.g;
+  const c = sel.c;
+  const gOpts = GRADES.map((x) => `<option value="${x}" ${x === g ? 'selected' : ''}>${x}학년</option>`).join('');
+  const cOpts = '<option value="0">반 선택</option>' + classes(g).map((x) => `<option value="${x}" ${x === c ? 'selected' : ''}>${x}반</option>`).join('');
+  let now = '<div class="empty">학년과 반을 고른 뒤 버튼을 눌러 주세요.</div>';
+  if (c) {
+    const b = bonusOf(state, g, c);
+    const full = b.sum >= BONUS_CAP;
+    now = `<div class="bonus-now"><b>${label(g, c)}</b> 가산점 <b class="bn">+${b.bonus}</b> <span class="muted">/ 최대 +${BONUS_CAP}${full ? ' · 상한이에요' : ''}</span></div>
+      <div class="bonus-btns">${BONUS_BUTTONS.map((p) => `<button class="btn primary" data-action="bonus-add" data-p="${p}" ${full ? 'disabled' : ''}>+${p}점</button>`).join('')}</div>`;
+  }
+  // 최근 기록 (모든 학년, 최신순)
+  const log = [];
+  for (const [k, ents] of Object.entries(state.cultureBonus || {})) {
+    const [gg, cc] = k.split('_').map(Number);
+    if (!GRADES.includes(gg)) continue;
+    for (const e of bonusOf(state, gg, cc).entries) log.push({ ...e, gg, cc, k });
+  }
+  log.sort((x, y) => y.t - x.t);
+  const logHtml = log.length
+    ? log.slice(0, 8).map((e) => `<div class="bonus-log"><span class="bt-time">${e.t ? fmtTime(e.t) : '-'}</span><b>${label(e.gg, e.cc)}</b><span class="bp">+${e.p}</span><button class="x" data-action="bonus-del" data-k="${e.k}" data-id="${e.id}" aria-label="이 기록 지우기">지우기</button></div>`).join('')
+    : '<div class="muted" style="margin-top:8px">아직 가산점 기록이 없어요.</div>';
+  const toggle = `<button class="btn ghost sm bonus-toggle" data-action="bonus-toggle" aria-expanded="${ui.bonusOpen}">가산점 기록 ${ui.bonusOpen ? '닫기 ▲' : '열기 ▼'}</button>`;
+  if (!ui.bonusOpen) return `<div class="bonus-closed">${toggle}</div>`;
+  return `<div class="grp bonus-card">
+    <div class="grp-head"><b>가산점 기록</b><span class="muted">한 반 최대 +${BONUS_CAP}</span></div>
+    <div class="bonus-sel">
+      <select data-act="bsG" aria-label="학년">${gOpts}</select>
+      <select data-act="bsC" aria-label="반">${cOpts}</select>
+    </div>
+    ${now}
+    <div class="sub-title" style="margin-top:12px">최근 기록 (잘못 눌렀으면 “지우기”)</div>
+    ${logHtml}
+    <div style="margin-top:10px">${toggle}</div>
+  </div>`;
+}
+
 function viewCulture() {
   const g = ui.cultG;
   const res = computeCulture(state, g);
@@ -651,21 +701,21 @@ function viewCulture() {
   const rows = res.rows
     .map((r) => {
       const cells = CULTURE.map((it) =>
-        edit
-          ? `<td><input class="num" type="number" inputmode="numeric" min="0" max="${it.max}" data-act="cult" data-f="${it.id}" data-c="${r.c}" value="${r.vals[it.id] === null ? '' : r.vals[it.id]}" aria-label="${r.label} ${it.name}"></td>`
-          : `<td class="num">${r.vals[it.id] === null ? '-' : r.vals[it.id]}</td>`,
+        edit ? `<td>${scoreSelect(it, r)}</td>` : `<td class="num">${r.vals[it.id] === null ? '-' : r.vals[it.id]}</td>`,
       ).join('');
-      return `<tr><td class="cls">${r.label}</td>${cells}<td class="total">${r.total === null ? '-' : r.total}</td><td>${r.done ? rk(r.rank) : '<span class="muted">-</span>'}</td></tr>`;
+      const bon = r.bonusSum ? `<b class="bn">+${r.bonus}</b>${r.capped ? '<small>상한</small>' : ''}` : '<span class="muted">·</span>';
+      return `<tr><td class="cls">${r.label}</td>${cells}<td class="num">${bon}</td><td class="total">${r.total === null ? '-' : r.total}</td><td>${r.done ? rk(r.rank) : '<span class="muted">-</span>'}</td></tr>`;
     })
     .join('');
   return `
     <section class="card">
       <div class="sec-head"><h2>스포츠문화상</h2><span class="muted">종합 점수와 별도로 집계돼요</span></div>
       ${gradeSeg('cultg', g)}
+      ${edit ? bonusPanel() : ''}
       <div class="tbl-wrap"><table class="cult-tbl">
-        <thead><tr><th>반</th>${CULTURE.map((it) => `<th>${it.name}<br>(${it.max})</th>`).join('')}<th>계<br>(100)</th><th>순위</th></tr></thead>
+        <thead><tr><th>반</th>${CULTURE.map((it) => `<th>${it.name}<br>(${it.max})</th>`).join('')}<th>가산<br>점</th><th>계</th><th>순위</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
-      <p class="hint">${CULTURE.filter((it) => it.sub).map((it) => `${it.name}: ${it.sub}`).join(' / ')}<br>채점 급간: 3점 · 세 항목이 모두 입력된 반부터 순위가 나와요.</p>
+      <p class="hint">${CULTURE.filter((it) => it.sub).map((it) => `${it.name}: ${it.sub}`).join(' / ')}<br>채점 급간: ${CULTURE_STEP}점 · 세 항목이 모두 입력된 반부터 순위가 나와요.<br>가산점은 칭찬받았을 때 받는 점수로 합계에 더해져요 (+${BONUS_BUTTONS.join(', +')}점씩, 한 반 최대 +${BONUS_CAP}점). 합계가 같으면 스포츠맨십 → 응원 점수가 높은 반이 앞서요.</p>
     </section>`;
 }
 
@@ -739,7 +789,7 @@ function viewPoints() {
       <div class="tbl-wrap"><table class="pts-tbl">
         <thead><tr><th style="text-align:left;padding-left:8px">항목</th><th>배점</th><th style="text-align:left">내용</th></tr></thead>
         <tbody>${cul}</tbody></table></div>
-      <p class="hint">합계 100점 · 채점 급간 3점</p>
+      <p class="hint">합계 100점 · 채점 급간 ${CULTURE_STEP}점 · 가산점 +${BONUS_BUTTONS.join('·+')}점 (한 반 최대 +${BONUS_CAP}점, 합계에 더해져요)</p>
     </section>`;
 }
 
@@ -866,6 +916,20 @@ document.addEventListener('click', (e) => {
       render();
       break;
     case 'presetup': ui.preSetup = !ui.preSetup; render(); break;
+    case 'bonus-add': {
+      if (!canEdit()) return;
+      const sel = ui.bonusSel.g ? ui.bonusSel : { g: ui.cultG, c: 0 };
+      if (!sel.c) { flash('먼저 반을 골라 주세요', true); return; }
+      const b = bonusOf(state, sel.g, sel.c);
+      if (b.sum >= BONUS_CAP) { flash(`가산점은 한 반 최대 +${BONUS_CAP}점이에요`, true); return; }
+      const id = 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      setVal(['cultureBonus', key(sel.g, sel.c), id], { p: Number(d.p), t: Date.now() });
+      break;
+    }
+    case 'bonus-toggle': ui.bonusOpen = !ui.bonusOpen; render(); break;
+    case 'bonus-del':
+      if (canEdit()) delVal(['cultureBonus', d.k, d.id]);
+      break;
     case 'lane-edit': if (canEdit()) { ui.laneEdit = !ui.laneEdit; render(); } break;
     case 'pwin': {
       if (!canEdit()) return;
@@ -887,7 +951,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'login-open': openLogin(); break;
     case 'login-cancel': $('#loginModal').hidden = true; break;
-    case 'logout': ui.laneEdit = false; ui.preSetup = false; store.logout().then(() => flash('관리 모드를 끝냈어요')); break;
+    case 'logout': ui.bonusOpen = false; ui.laneEdit = false; ui.preSetup = false; store.logout().then(() => flash('관리 모드를 끝냈어요')); break;
     case 'adv': {
       if (!canEdit()) return;
       const g = ui.evG;
@@ -951,6 +1015,8 @@ document.addEventListener('change', (e) => {
       setVal(['tugPre', String(g), t.dataset.key].concat(t.dataset.side ? [t.dataset.side] : []), v);
       break;
     }
+    case 'bsG': ui.bonusSel = { g: Number(t.value), c: 0 }; render(); break;
+    case 'bsC': ui.bonusSel = { g: ui.bonusSel.g || ui.cultG, c: Number(t.value) }; render(); break;
     case 'lane': {
       const path = ['relayLane', String(g), 'g' + t.dataset.grp, 'l' + t.dataset.lane];
       t.value === '' ? delVal(path) : setVal(path, Number(t.value));
