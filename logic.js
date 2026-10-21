@@ -35,8 +35,12 @@ export const TIE_BREAK = ['typhoon', 'tug', 'marathon'];
 export const CULTURE = [
   { id: 'sp', name: '스포츠맨십', sub: '', max: 40 },
   { id: 'cheer', name: '응원', sub: '준비물(깃발 포함) & 창의성 & 열정', max: 30 },
-  { id: 'tidy', name: '정리 정돈', sub: '질서 & 청결', max: 30 },
+  { id: 'tidy', name: '질서&정리정돈', sub: '질서 & 청결', max: 30 },
 ];
+
+export const CULTURE_STEP = 5; // 심사 점수는 5점 단위로 줘요
+export const BONUS_BUTTONS = [5]; // 가산점 버튼 (+5)
+export const BONUS_CAP = 20; // 한 반이 받을 수 있는 가산점 합계 상한
 
 const OUT = 99; // "예선 탈락"을 나타내는 내부 값 (5위 이하와 같은 점수)
 
@@ -302,21 +306,39 @@ export function computeAll(state) {
 }
 
 // ───────── 스포츠문화상 (종합 점수와 별도 집계) ─────────
+// 반 하나의 가산점 기록을 모아요. (state.cultureBonus[key] = { 기록id: { p: 점수, t: 시각 } })
+export function bonusOf(state, g, c) {
+  const rec = ((state.cultureBonus || {})[key(g, c)]) || {};
+  const entries = Object.entries(rec)
+    .map(([id, e]) => ({ id, p: num(e && e.p), t: num(e && e.t) || 0 }))
+    .filter((e) => e.p !== null && e.p > 0)
+    .sort((a, b) => a.t - b.t);
+  const sum = entries.reduce((a, e) => a + e.p, 0);
+  return { entries, sum, bonus: Math.min(sum, BONUS_CAP), capped: sum >= BONUS_CAP };
+}
+
 export function computeCulture(state, g) {
   const rec = state.culture || {};
   const rows = classes(g).map((c) => {
     const r = rec[key(g, c)] || {};
     const vals = {};
-    let total = 0;
+    let base = 0;
     let filled = 0;
     for (const item of CULTURE) {
       const v = num(r[item.id]);
       vals[item.id] = v;
-      if (v !== null) { total += v; filled++; }
+      if (v !== null) { base += v; filled++; }
     }
-    return { g, c, label: label(g, c), vals, total: filled ? total : null, done: filled === CULTURE.length };
+    const b = bonusOf(state, g, c);
+    const total = filled || b.sum ? base + b.bonus : null;
+    return {
+      g, c, label: label(g, c), vals, base: filled ? base : null, bonus: b.bonus, bonusSum: b.sum, capped: b.capped, entries: b.entries,
+      total, done: filled === CULTURE.length,
+    };
   });
-  const ranks = competitionRanks(rows.filter((r) => r.done).map((r) => ({ id: r.c, v: r.total })));
+  // 순위: 합계(심사+가산) → 같으면 스포츠맨십 → 응원 점수가 높은 반이 앞서요. 모두 같으면 공동 순위.
+  const comp = (r) => r.total * 1e6 + (r.vals.sp || 0) * 1e3 + (r.vals.cheer || 0);
+  const ranks = competitionRanks(rows.filter((r) => r.done).map((r) => ({ id: r.c, v: comp(r) })));
   for (const r of rows) r.rank = r.done ? ranks[r.c] : null;
   return { g, rows };
 }
